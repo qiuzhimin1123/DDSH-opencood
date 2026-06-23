@@ -1,3 +1,13 @@
+Metadata-Version: 2.1
+Name: OpenCOOD
+Version: 0.1.0
+Summary: An opensource pytorch framework for autonomous driving cooperative detection
+Home-page: https://github.com/ucla-mobility/OpenCDA.git
+Author: Runsheng Xu, Hao Xiang
+Author-email: rxx3386@ucla.edu
+License: MIT
+License-File: LICENSE
+
 <div align="center">
   <img src="images/opencood.png" width="600"/>
   <div>&nbsp;</div>

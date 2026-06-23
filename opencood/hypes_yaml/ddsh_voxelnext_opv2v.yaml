@@ -1,0 +1,142 @@
+name: ddsh_voxelnext_opv2v
+root_dir: "opv2v_data_dumping/train"
+validate_dir: "opv2v_data_dumping/validate"
+
+yaml_parser: "load_ddsh_voxelnext_params"
+
+train_params:
+  batch_size: &batch_size 1
+  epoches: 60
+  eval_freq: 1
+  save_freq: 1
+  max_cav: &max_cav 5
+
+fusion:
+  core_method: "IntermediateFusionDataset"
+  args: []
+
+preprocess:
+  core_method: "SpVoxelPreprocessor"
+  args:
+    voxel_size: &voxel_size [0.2, 0.2, 0.4]
+    max_points_per_voxel: 10
+    max_voxel_train: 60000
+    max_voxel_test: 100000
+  cav_lidar_range: &cav_lidar [-140.8, -40, -3, 140.8, 40, 1]
+
+data_augment:
+  - NAME: random_world_flip
+    ALONG_AXIS_LIST: ["x"]
+  - NAME: random_world_rotation
+    WORLD_ROT_ANGLE: [-0.78539816, 0.78539816]
+  - NAME: random_world_scaling
+    WORLD_SCALE_RANGE: [0.95, 1.05]
+
+postprocess:
+  core_method: "DdshVoxelNeXtPostprocessor"
+  anchor_args:
+    cav_lidar_range: *cav_lidar
+  order: "hwl"
+  max_num: 100
+  nms_thresh: 0.15
+
+model:
+  core_method: ddsh_voxelnext
+  args:
+    voxel_size: *voxel_size
+    lidar_range: *cav_lidar
+    box_order: "hwl"
+    class_names: ["vehicle"]
+    max_cav: *max_cav
+    num_point_features: 4
+    mean_vfe: {}
+    backbone_3d:
+      SPCONV_KERNEL_SIZES: [5, 5, 3, 3]
+      CHANNELS: [32, 64, 128, 128, 128]
+      OUT_CHANNEL: 128
+    sparse_height_compression:
+      source_key: encoded_spconv_tensor
+      reduce: sum
+    ddsh:
+      stage: demand_supply
+      debug: false
+      demand:
+        mode: topk
+        score_mode: learned
+        topk: 2048
+        ratio: 0.35
+        min_tokens: 64
+      supply:
+        mode: demand_radius
+        score_mode: norm
+        radius: 4
+        max_tokens_per_helper: 4096
+        fallback: topk
+      fusion:
+        method: gated_mean
+      local_attention:
+        enabled: false
+        radius: 2
+        max_neighbors: 32
+        max_attention_tokens: 4096
+    late_compensation:
+      enabled: false
+      require_input: false
+    sparse_head:
+      CLASS_AGNOSTIC: false
+      CLASS_NAMES_EACH_HEAD:
+        - ["vehicle"]
+      SHARED_CONV_CHANNEL: 128
+      KERNEL_SIZE_HEAD: 1
+      USE_BIAS_BEFORE_NORM: true
+      NUM_HM_CONV: 2
+      SEPARATE_HEAD_CFG:
+        HEAD_ORDER: ["center", "center_z", "dim", "rot"]
+        HEAD_DICT:
+          center:
+            out_channels: 2
+            num_conv: 2
+          center_z:
+            out_channels: 1
+            num_conv: 2
+          dim:
+            out_channels: 3
+            num_conv: 2
+          rot:
+            out_channels: 2
+            num_conv: 2
+      TARGET_ASSIGNER_CONFIG:
+        FEATURE_MAP_STRIDE: 8
+        NUM_MAX_OBJS: 500
+        GAUSSIAN_OVERLAP: 0.1
+        MIN_RADIUS: 2
+      LOSS_CONFIG:
+        LOSS_WEIGHTS:
+          cls_weight: 1.0
+          loc_weight: 1.0
+          code_weights: [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+      POST_PROCESSING:
+        SCORE_THRESH: 0.1
+        POST_CENTER_LIMIT_RANGE: *cav_lidar
+        MAX_OBJ_PER_SAMPLE: 500
+        NMS_CONFIG:
+          NMS_TYPE: nms_rotated
+          NMS_THRESH: 0.1
+          NMS_PRE_MAXSIZE: 4096
+          NMS_POST_MAXSIZE: 500
+
+loss:
+  core_method: ddsh_voxelnext_loss
+  args: {}
+
+optimizer:
+  core_method: Adam
+  lr: 0.001
+  args:
+    eps: 1e-10
+    weight_decay: 1e-4
+
+lr_scheduler:
+  core_method: multistep
+  gamma: 0.1
+  step_size: [20, 40]

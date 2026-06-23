@@ -1,0 +1,139 @@
+name: ddsh_voxelnext_stage0_sparse_single
+root_dir: "opv2v_data_dumping/train"
+validate_dir: "opv2v_data_dumping/validate"
+
+yaml_parser: "load_ddsh_voxelnext_params"
+
+train_params:
+  batch_size: &batch_size 1
+  epoches: 60
+  eval_freq: 1
+  save_freq: 1
+  max_cav: &max_cav 5
+
+fusion:
+  core_method: "IntermediateFusionDataset"
+  args: []
+
+preprocess:
+  core_method: "SpVoxelPreprocessor"
+  args:
+    voxel_size: &voxel_size [0.2, 0.2, 0.4]
+    max_points_per_voxel: 10
+    max_voxel_train: 60000
+    max_voxel_test: 100000
+  cav_lidar_range: &cav_lidar [-140.8, -40, -3, 140.8, 40, 1]
+
+data_augment:
+  - NAME: random_world_flip
+    ALONG_AXIS_LIST: ["x"]
+  - NAME: random_world_rotation
+    WORLD_ROT_ANGLE: [-0.78539816, 0.78539816]
+  - NAME: random_world_scaling
+    WORLD_SCALE_RANGE: [0.95, 1.05]
+
+postprocess:
+  core_method: "VoxelPostprocessor"
+  anchor_args:
+    cav_lidar_range: *cav_lidar
+    l: 3.9
+    w: 1.6
+    h: 1.56
+    r: [0, 90]
+    feature_stride: 8
+    num: &anchor_num 2
+  target_args:
+    pos_threshold: 0.6
+    neg_threshold: 0.45
+    score_threshold: 0.20
+  order: "hwl"
+  max_num: 100
+  nms_thresh: 0.15
+
+ddsh:
+  stage: sparse_single
+  debug: true
+
+communication:
+  enable: false
+  supply_mode: none
+  demand_topk: 0
+  supply_topk: 0
+
+sparse_bev:
+  reduce: max
+
+sparse_fusion:
+  type: none
+
+sparse_attention:
+  enable: false
+
+late_compensation:
+  enable: false
+
+ddsh_stats:
+  enable: true
+  interval: 100
+  save_dir: ddsh_statistics
+  train_csv: train_ddsh_statistics.csv
+  profile_latency: true
+  profile_memory: true
+
+paper_vis:
+  enable: true
+  interval: 500
+  max_samples: 3
+  save_dir: paper_figures
+  save_png: true
+  save_svg: true
+  save_pdf: true
+  dpi: 600
+  tensorboard: true
+  font_family: Times New Roman
+  draw_sparse_tokens: true
+  draw_demand: true
+  draw_supply: true
+  draw_alignment: true
+  draw_demand_supply_matching: true
+  draw_topk_comparison: true
+  draw_attention_neighbors: true
+  draw_fusion_tokens: true
+  draw_detection_result: true
+  draw_late_compensation: true
+  draw_token_statistics: true
+  draw_communication_statistics: true
+  draw_stage_comparison: true
+
+model:
+  core_method: ddsh_voxelnext
+  args:
+    voxel_size: *voxel_size
+    lidar_range: *cav_lidar
+    anchor_number: *anchor_num
+    anchor_num: *anchor_num
+    max_cav: *max_cav
+    num_point_features: 4
+    mean_vfe: {}
+    backbone_3d:
+      SPCONV_KERNEL_SIZES: [5, 5, 3, 3]
+      CHANNELS: [32, 64, 128, 128, 128]
+      OUT_CHANNEL: 128
+
+loss:
+  core_method: point_pillar_loss
+  args:
+    cls_weight: 1.0
+    reg: 2.0
+
+optimizer:
+  core_method: Adam
+  lr: 0.001
+  args:
+    eps: 1e-10
+    weight_decay: 1e-4
+
+lr_scheduler:
+  core_method: multistep
+  gamma: 0.1
+  step_size: [20, 40]
